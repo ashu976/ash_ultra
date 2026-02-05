@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from einops import rearrange
+import torch.nn.init as init
 from ..modules.conv import Conv, DWConv, RepConv, autopad
 from ..modules.block import *
 from .attention import *
@@ -12,7 +13,7 @@ from .dynamic_snake_conv import DySnakeConv
 from .ops_dcnv3.modules import DCNv3, DCNv3_DyHead
 from ultralytics.yolo.utils.torch_utils import make_divisible
 
-__all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Faster', 'C3_ODConv', 'C2f_ODConv', 'Partial_conv3', 'C2f_Faster_EMA', 'C3_Faster_EMA', 'C2f_DBB',
+__all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Faster', 'C3_ODConv', 'C2f_ODConv', 'Partial_conv3', 'C2f_Faster_EMA','C2f_EMA', 'C3_Faster_EMA', 'C2f_DBB',
            'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
            'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
            'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3']
@@ -32,6 +33,17 @@ try:
     from mmengine.model import constant_init, normal_init
 except ImportError:
     pass
+
+
+class C2f_EMA(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.ema = EMA(c2)
+
+    def forward(self, x):
+        y = super().forward(x)
+        return self.ema(y)
+
 
 def _make_divisible(v, divisor, min_value=None):
     if min_value is None:
@@ -220,9 +232,10 @@ class DyHeadBlock(nn.Module):
     def _init_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                normal_init(m, 0, 0.01)
-        if self.zero_init_offset:
-            constant_init(self.spatial_conv_offset, 0)
+                init.normal_(m.weight, mean=0, std=0.01)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+
 
     def forward(self, x):
         """Forward function."""
